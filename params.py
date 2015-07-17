@@ -13,16 +13,19 @@ cent='images/centred.tif'
 
 #Number of HIO, ER, OSS and minimum iterations
 #(Set HIO and ER=0 if using OSS and vice versa)
-n_iters=20 #Will run x*(n_HIO+n_ER) that carries the running total over n_iters
-n_HIO=15
-n_ER=5
+n_HIO=16
+n_ER=12 #Need at least 1 ER before HIO 2 generate a old guess and a current one
+n_cycles=2 #Number of times to cycle ER+HIO+ER
 n_OSS=0
+
+if(n_OSS>0): n_iters=n_OSS
+else:n_iters=(2*n_ER+n_HIO)*n_cycles
 
 #Initial OSS variance
 oss_var=10
 
 #Phasing threshold and image subtraction threshold
-thresh=2
+thresh=5
 
 #Phase range
 nph=-np.pi/2
@@ -32,14 +35,14 @@ pph=np.pi/2
 beta=0.9
 
 #Scaling parameter for each pixel
-scalex=1
-scaley=1
-scalez=1
+scalex=1.0
+scaley=1.0
+scalez=1.0
 
 #Initial box support (in fractions of half data array size)
-xf=1.3
-yf=1.3
-zf=1.3
+xf=0.8
+yf=0.8
+zf=0.8
 
 # Detector and scan variables
 deg2rad=math.pi/180

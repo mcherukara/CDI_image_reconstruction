@@ -8,6 +8,7 @@ import time
 import pyfftw.interfaces.scipy_fftpack as pf
 import pyfftw as pyf
 import Tools as t
+import matplotlib.pyplot as plt
 
 
 """Read TIFF stack and store as 3D numpy array"""
@@ -19,6 +20,15 @@ nz,nx,ny=imarr.shape[0],imarr.shape[1],imarr.shape[2]
 print "Original number of Z,X and Y bins", nz,nx,ny
 
 """Subtracting background comes here"""
+
+
+
+
+"""FFTW parameters and error storage"""
+pyf.interfaces.cache.enable() #Enable cache to store instances of pf.FFTW class, creating overhead is large
+pyf.interfaces.cache.set_keepalive_time(60) #How long to keep cache alive in seconds
+err=[]
+
 
 """Threshold values"""
 imarr=np.where(imarr<params.thresh,0,imarr)
@@ -49,52 +59,62 @@ sx_pos,sx_neg=params.xf*nx/2,(-1)*params.xf*nx/2
 sy_pos,sy_neg=params.yf*ny/2,(-1)*params.yf*ny/2
 supportparams=((sz_pos,0,0),(sz_neg,0,0),(0,sx_pos,0),(0,sx_neg,0),(0,0,sy_pos),(0,0,sy_neg))
 support=t.MakePoly(data.shape, supportparams)
-meth.xyz_save(support,'visuals/supp.xyz',params.scalez,params.scalex,params.scaley)
 
-"""Create initial guess and run 1 ER to get an old guess"""
-iguess=np.zeros((nz,nx,ny),dtype=complex)
+"""Create initial guess and scale data"""
+#iguess=np.zeros((nz,nx,ny),dtype=complex)
 data=pf.fftshift(data) #ONLY shift ever done
-iguess=data*np.exp(1j*np.random.uniform(-np.pi/2,np.pi/2))
-#print "Check bloody complex mult", data[100+shift_z,100+shift_x,100+shift_y],abs(iguess[100+shift_z,100+shift_x,100+shift_y])
-meth.xyz_save(iguess,'visuals/shifted_imaginary.xyz',params.scalez,params.scalex,params.scaley)
+#data=pf.fftn(pf.fftshift(pf.ifftn(pf.fftshift(data))))
+dmag=np.sum(np.abs(data)**2)
+#iguess=data*np.exp(1j*np.random.uniform(-np.pi/2,np.pi/2))
+#guess=pf.fftshift(pf.ifftn(iguess))
 
-pyf.interfaces.cache.enable() #Enable cache to store instances of pf.FFTW class, creating overhead is large
-pyf.interfaces.cache.set_keepalive_time(60) #How long to keep cache alive in seconds
-guess=pf.fftshift(pf.ifftn(iguess))
-meth.xyz_save(guess,'visuals/initguess.xyz',params.scalez,params.scalex,params.scaley)
-#wisdom=pyf.export_wisdom()
+guess=support*np.random.random(support.shape).astype(np.complex128)*np.exp(1j*np.random.uniform(-np.pi/2,np.pi/2))
+sos2=1 #Real space scale,norm to 0 index point
+sos2=np.sum(np.abs(guess)**2)
+scale=data.ravel()[0]/sos2
+print "Scale", scale
+guess*=scale
 
-tmp=meth.ER(guess,support)
-meth.xyz_save(tmp,'visuals/1st_after_support.xyz',params.scalez,params.scalex,params.scaley)
-oguess,guess=meth.each_iter(guess,tmp,data)
-meth.xyz_save(guess,'visuals/1st_real.xyz',params.scalez,params.scalex,params.scaley)
 
 
 """Iterate over algorithms"""
 print "Entering iterative loop"
-i=0
 a=time.clock()
+i=1
 while(i<params.n_iters):
 
      #Run first ER runs
     for k in range(params.n_ER):
         if (k==0): print "Starting ER"
         tmp=meth.ER(guess,support)
-        oguess,guess=meth.each_iter(guess,tmp,data)
+        #meth.xyz_save(guess,'visuals/ER_pre_meth.xyz',params.scalez,params.scalex,params.scaley)
+        tmpa,oguess,guess=meth.each_iter(guess,tmp,data,dmag)
+        err.append(tmpa)
+        print "Error", i, tmpa
+        i+=1
+    meth.xyz_save(guess,'visuals/curr_ER.xyz',params.scalez,params.scalex,params.scaley)
 
     #Run prescribed HIO iters
     for k in range(params.n_HIO):
         if(k==0):print "Starting HIO"
         tmp=meth.HIO(oguess,guess,support,params.beta,params.nph,params.pph)
-        oguess,guess=meth.each_iter(guess,tmp,data)
-    meth.xyz_save(guess,'visuals/after_HIO.xyz',params.scalez,params.scalex,params.scaley)
-
+        #meth.xyz_save(guess,'visuals/HIO_pre_meth.xyz',params.scalez,params.scalex,params.scaley)
+        tmpa,oguess,guess=meth.each_iter(guess,tmp,data,dmag)
+        err.append(tmpa)
+        print "Error", i, tmpa
+        i+=1
+    meth.xyz_save(guess,'visuals/curr_HIO.xyz',params.scalez,params.scalex,params.scaley)
 
     #Same for ER
     for k in range(params.n_ER):
         if (k==0): print "Starting ER"
         tmp=meth.ER(guess,support)
-        oguess,guess=meth.each_iter(guess,tmp,data)
+        #meth.xyz_save(guess,'visuals/ER_pre_meth.xyz',params.scalez,params.scalex,params.scaley)
+        tmpa,oguess,guess=meth.each_iter(guess,tmp,data,dmag)
+        err.append(tmpa)
+        print "Error", i, tmpa
+        i+=1
+        #meth.xyz_save(guess,'visuals/curr_ER.xyz',params.scalez,params.scalex,params.scaley)
 
     #If OSS control must fall directly here
     varg=params.oss_var
@@ -102,9 +122,11 @@ while(i<params.n_iters):
         if(k==0): print "Starting OSS"
         varg/=2
         tmp=meth.OSS(oguess,guess,support,params.beta,varg)
-        oguess,guess=meth.each_iter(guess,tmp,data)
+        tmpa,oguess,guess=meth.each_iter(guess,tmp,data,dmag)
+        print "Error", i, tmpa
+        err.append(tmpa)
+        i+=1
 
-    i+=params.n_ER+params.n_HIO+params.n_OSS
     print "Loop",i
 b=time.clock()
 print "Loop time", b-a
@@ -114,3 +136,6 @@ a=time.clock()
 meth.xyz_save(guess,'visuals/tst.xyz',params.scalez,params.scalex,params.scaley)
 b=time.clock()
 print "File write time", b-a
+print "Error with iteration", err
+plt.plot(err)
+plt.show()
