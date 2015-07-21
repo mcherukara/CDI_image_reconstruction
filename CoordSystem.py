@@ -75,8 +75,7 @@ def getCoordSystem(lam, delta, gam, pixelx, pixely, arm, dth, dims, space):
   dy=1./size2
   dz=1./size3
 
-  r=nd.mgrid[ (size1-1)*dx:-dx:-dx, \
-               0:size2*dy:dy, 0:size3*dz:dz]
+  r=nd.mgrid[ (size1-1)*dx:-dx:-dx, 0:size2*dy:dy, 0:size3*dz:dz]
 
   r.shape=3,size1*size2*size3
   r=r.transpose()
