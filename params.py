@@ -13,9 +13,9 @@ cent='images/centred.tif'
 
 #Number of HIO, ER, OSS and minimum iterations
 #(Set HIO and ER=0 if using OSS and vice versa)
-n_HIO=16
-n_ER=12 #Need at least 1 ER before HIO 2 generate a old guess and a current one
-n_cycles=1 #Number of times to cycle ER+HIO+ER
+n_HIO=24
+n_ER=8 #Need at least 1 ER before HIO 2 generate a old guess and a current one
+n_cycles=4 #Number of times to cycle ER+HIO+ER
 n_OSS=0
 
 if(n_OSS>0): n_iters=n_OSS
@@ -30,10 +30,10 @@ nph=-np.pi/2
 pph=np.pi/2
 
 #Feedback parameter (set between 0.7 and 0.9)
-beta=0.9
+beta=0.5
 
 #Data array size is how many times image array?
-dfs=14/10.
+dfs=16/10.
 
 #Scaling parameter for each pixel
 scalex=1.0

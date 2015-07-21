@@ -140,19 +140,18 @@ meth.xyz_save(guess,'visuals/tst.xyz',params.scalex,params.scaley,params.scalez)
 print "Error with iteration", err
 
 
-"""
-viz=CXDViz()
-viz.SetArray(guess)
-space='direct'
-dx,dy,dz=1./guess.shape[0],1./guess.shape[1],1./guess.shape[2]
-viz.SetGeomCoordparams(params.lam, params.delta, params.gam, params.dpx, params.dpy, params.dth, dx, dy, dz,space)
-viz.WriteStructuredGrid("d:/temp/test.vtk")
-import mayavi as m
-v=m.mayavi()
+
+#viz=CXDViz()
+#viz.SetArray(guess)
+#space='direct'
+#dx,dy,dz=1./guess.shape[0],1./guess.shape[1],1./guess.shape[2]
+#viz.SetGeomCoordparams(params.lam, params.delta, params.gam, params.dpx, params.dpy, params.dth, dx, dy, dz,space)
+#viz.WriteStructuredGrid("d:/temp/test.vtk")
+#import mayavi as m
+#v=m.mayavi()
 #    v.open_vtk_data(tvtk.to_vtk(viz.GetImageData()))
-v.open_vtk_data(tvtk.to_vtk(viz.GetStructuredGrid()))
+#v.open_vtk_data(tvtk.to_vtk(viz.GetStructuredGrid()))
 #v.master.wait_window()
-"""
 
 plt.plot(err)
 plt.show()

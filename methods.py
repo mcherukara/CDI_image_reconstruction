@@ -53,12 +53,15 @@ def HIO(oguess,eguess,support,beta,nph,pph):
 
 def OSS(oguess,eguess,support,beta,iter):
     tmp=np.where(support,eguess, oguess-beta*eguess) #Same as HIO-no phase for now
-    nz,nx,ny=eguess.shape[0],eguess.shape[1],eguess.shape[2]
-    factor=iter/float(p.n_OSS)
-    vx,vy,vz=nx
-    T.gauss_conv_fft(tmp)
+    nx,ny,nz=float(eguess.shape[0]),flooat(eguess.shape[1]),float(eguess.shape[2])
+    n=float(p.n_OSS)
+    vx=(n-iter)/n*(nx-1/nx)+1/nx
+    vx=(n-iter)/n*(ny-1/ny)+1/ny
+    vz=(n-iter)/n*(nz-1/nz)+1/nz
+    sigs=np.array(vx,vy,vz)
+    tmp2=T.gauss_conv_fft(tmp,sigs)
     #tmp2=pf.ifftn(pf.fftn(tmp)*gauss3d(nx,ny,nz,varg))
-    return guess*support+(1-support)*tmp2
+    return eguess*support+(1-support)*tmp2
 
 
 def each_iter(eguess,etmp,data,dmag,dc): #Copies previous iteration completes full circle to come back to real space
