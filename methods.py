@@ -1,103 +1,158 @@
 __author__ = 'mathew'
 
-
-import scipy.signal as signal
 import cmath
+import math as m
 import numpy as np
-import pyfftw.interfaces.scipy_fftpack as pf
-import methods as meth
+import pyfftw.interfaces.scipy_fftpack as sf
 import params as p
 import time
-#import pyfftw as pyf
+import Tools as T
+import scipy.ndimage.filters as nf
+from scipy.spatial import ConvexHull as CH
+from skimage.morphology import convex_hull_image as CHI
+
+#ER
+def ER(dmag,data,support,guess,err,merr):
+  iguess=sf.fftn(guess)
+  cerr=np.sum( ( np.abs(iguess)-np.abs(data) )**2 )/dmag #Calculate error
+  phi=np.arctan2(iguess.imag,iguess.real)
+  iguess=np.where(np.abs(data),data*np.exp(1.j*phi),0.0) #Replace with measured amplitudes
+  oguess=guess
+  guess=sf.ifftn(iguess)
+  sos1=np.sum(np.abs(guess)**2)
+  guess*=support #Update real space object
+  sos2=np.sum(np.abs(guess)**2) #Rescale amplitudes after update
+  scale=(sos1/sos2)**0.5
+  guess*=scale
+  err.append(cerr)
+  merr.append(scale)
+  print cerr, scale
+  return guess
 
 
-def gauss3d(nx,ny,nz,varg):
-#Generate a 3D Gaussian in k space using number of points in each dimension
-  npts=max(nx,ny,nz)
-  gx=signal.gaussian(npts,varg)
-  gx/=sum(gx)
-  gy=signal.gaussian(npts,varg)
-  gy/=sum(gy)
-  gz=signal.gaussian(npts,varg)
-  gz/=sum(gz)
-  gout=gx*gy*gz
-  print gout.shape
-  meth.xyz_save(gout,'visuals/gout.xyz',params.scalez,params.scalex,params.scaley)
-  return gout
+#Phase constrained HIO
+def HIO(dmag,data,support,guess,err,merr):
+  iguess=sf.fftn(guess)
+  cerr=np.sum( ( np.abs(iguess)-np.abs(data) )**2 )/dmag
+  phi=np.arctan2(iguess.imag,iguess.real)
+  iguess=np.where(np.abs(data),data*np.exp(1.j*phi),0.0) #Replace with measured amplitudes
+  oguess=guess
+  guess=sf.ifftn(iguess)
+  sos1=np.sum(np.abs(guess)**2)
+  phr=np.arctan2(guess.imag, guess.real)
+  chk=np.logical_and(support,np.logical_and((p.nph<phr),(phr<p.pph))) #Phase constraint
+#  guess=support*guess+(1-support)*(oguess-p.beta*guess)
+  guess=chk*guess+(1-chk)*(oguess-p.beta*guess) #Phase coonstrained HIO
+  sos2=np.sum(np.abs(guess)**2) #Rescale amplitdues after update
+  scale=(sos1/sos2)**0.5
+  guess*=scale 
+  err.append(cerr)
+  merr.append(scale)
+  print cerr, scale
+  return guess
 
+#Shrink wrap and update support by scaling guassian smoothening with increasing iterations
+def upsup(obj,i):
+  ntot=p.n_iters/p.n_cycles #Only shrink support during the first cycle
+  xo,xf=1.,ntot/p.severy #Calculate initial and final update points
+  yo,yf=p.isig,float(p.fsig)
+  i/=float(p.severy) #Count in number of updates
+  if(xf==1):sig=(p.isig+p.fsig)/2. #0 division of only 1 update done
+  else: sig=yo+(i-xo)*((yf-yo)/(xf-xo)) #Linearly scale sigma between initial and final values
+  print "Real space sigma", sig
+  rimage=np.abs(obj)
 
+  smooth=np.abs(T.gauss_conv_fft(rimage,[sig,sig,sig]))
+  smooth/=smooth.max()
+  supp=(smooth>=p.sfrac)*1 #Threshold as fraction of max
+#  xyz_save(supp,'visuals/supp%d.xyz' %i)
+  return supp
+  
 
-def ER(eguess, support):
+#Method to write array to XYZ for Ovito, after coordinate transform
+def xyz_trans(cors,oguess,name):
     a=time.clock()
-    rs1=np.sum(np.abs(eguess)**2) #Real scale 1
-    eguess*=support
-    rs2=np.sum(np.abs(eguess)**2) #Real scale 2
-    eguess*=np.sqrt(rs1/rs2)
-    b=time.clock()
-    print "ER time", b-a
-    return eguess
-
-
-def HIO(oguess,eguess,support,beta,nph,pph):
-    a=time.clock()
-    rs1=np.sum(np.abs(eguess)**2) #Real scale 1
-    """Edit these to include phase constraint, in general support seems more important"""
-    ph=np.arctan2(eguess.imag,eguess.real)
-    chk=np.logical_and(support>0,nph<ph,ph<pph)
-    eguess=chk*eguess+(1-chk)*(oguess-beta*eguess)
-    #eguess=support*eguess+(1-support)*(oguess-beta*eguess)
-    rs2=np.sum(np.abs(eguess)**2) #Real scale 2
-    eguess*=np.sqrt(rs1/rs2)
-    b=time.clock()
-    print "HIO time", b-a
-    return eguess
-
-
-def OSS(oguess,guess,support,beta,varg):
-
-    tmp=guess*support+(1-support)*(oguess-beta*guess) #Same as HIO
-    sz=guess.shape
-    nx,ny,nz=sz[0],sz[1],sz[2]
-    tmp2=pf.ifftn(pf.fftn(tmp)*gauss3d(nx,ny,nz,varg))
-    return guess*support+(1-support)*tmp2
-
-
-def each_iter(eguess,etmp,data,dmag): #Copies previous iteration completes full circle to come back to real space
-#    pyf.import_wisdom(wisdom)
-    a=time.clock()
-    oguess=eguess
-    eguess=etmp
-    iguess=pf.fftn(eguess)
-    err=np.sum((np.abs(iguess)-np.abs(data))**2)/dmag
-    #iguess=np.where(data>0,np.abs(data)*np.exp(1j*np.arctan2(iguess.imag,iguess.real)),iguess) #Only replace intensities when the threshold>something--this is done at the image stage
-    iguess=np.where(data>0,np.abs(data)/np.abs(iguess)*iguess,iguess) #Only replace intensities when the threshold>something--this is done at the image stage
-    eguess=pf.ifftn(iguess)
-    b=time.clock()
-    print "Iteration time", b-a
-    return err,oguess,eguess
-
-
-def xyz_save(oguess,name,scalez,scalex,scaley):
-    a=time.clock()
-    nz,nx,ny=oguess.shape[0],oguess.shape[1],oguess.shape[2]
-    nats=(nx//3+1)*(ny//3+1)*(nz//3+1)
-    #print "Writing %d data points" %(nats)
-    #oguess/=np.max(np.abs(oguess)) #Scale magnitudes to 1 when writing
+    nx,ny,nz=oguess.shape[0],oguess.shape[1],oguess.shape[2]
+    nd=2
+    nats=(nx//nd)*(ny//nd)*(nz//nd)
     ofile=open(name,'w')
     ofile.write("%d\n" %nats)
     ofile.write("X Y Z Intensity Phase\n")
-    lcnt=0 #----RETURN TO THIS, SHOULD WRITE ONLY NEEDED REGIONS, MEMORY WILL BE AN ISSUE
-    for i in range(0,nz,3):
-        for j in range(0,nx,3):
-            for k in range(0,ny,3):
+    for i in range(0,nx,nd):
+        for j in range(0,ny,nd):
+            for k in range(0,nz,nd):
                 tmp=cmath.polar(oguess[i,j,k])
-    #    if(tmp[0]>0):#If number has magnitude, plot
-                ofile.write("%.2f %.2f %.2f %.4f %.4f\n" %(i*scalez,j*scalex,k*scaley,tmp[0],tmp[1]))
-                lcnt+=1
+                ofile.write("%.2f %.2f %.2f %.4f %.4f\n" %(cors[i,j,k,0],cors[i,j,k,1],cors[i,j,k,2],tmp[0],tmp[1]))
     ofile.close()
     b=time.clock()
     print "File write time", b-a
-  #print "%d Lines written" %lcnt
     return
 
+
+#Lifted from Ross who used the transform outlined in Pfiefer's thesis (except for the 1st column)
+def getCoordSystem(dims,space):
+
+  dpx,dpy = p.pixelx/p.arm,p.pixely/p.arm
+  #dQdpx=np.array([-m.cos(p.delta),0.0,m.sin(p.delta)]) #Pfeifer has this without cosine terms on his thesis!!!!!
+  dQdpx=np.array([-m.cos(p.delta)*m.cos(p.gam),0.0,m.sin(p.delta)*m.cos(p.gam)])
+  dQdpy=np.array([m.sin(p.delta)*m.sin(p.gam),-m.cos(p.gam),m.cos(p.delta)*m.sin(p.gam)])
+  dQdth=np.array([1-m.cos(p.delta)*m.cos(p.gam),0.0,m.sin(p.delta)*m.cos(p.gam)])
+
+  Astar=(2.0*m.pi/p.lam)*dpx*dQdpx
+  Bstar=(2.0*m.pi/p.lam)*dpy*dQdpy
+  Cstar=(2.0*m.pi/p.lam)*p.dth*dQdth
+  denom = np.dot( Astar, np.cross(Bstar,Cstar) )
+  A=2*m.pi*np.cross(Bstar,Cstar)/denom
+  B=2*m.pi*np.cross(Cstar,Astar)/denom
+  C=2*m.pi*np.cross(Astar,Bstar)/denom
+
+  if p.delta >= 0.0 and p.gam >= 0.0 and p.pixelx > 0 and \
+    p.pixely > 0 and p.dth >= 0.0 and \
+    p.lam >= 0.0 and p.arm >= 0.0:
+    if space=="direct":
+      #T = nd.array((A,B,C)).transpose()
+      T = np.array((A,B,C))
+    elif space=="recip":
+      #T = nd.array((Astar, Bstar, Cstar)).transpose()
+      T = np.array((Astar, Bstar, Cstar))
+  else:
+    T = np.array((1,0,0,0,1,0,0,0,1), dtype=float)
+  T.shape=(3,3)
+
+  print "transform", T
+  print "dims in getcoord", dims
+  if len(dims) < 2: 
+    "I'm not doing 2D data sets"
+    return
+  
+  size1,size2,size3=dims[0],dims[1],dims[2]
+  dx,dy,dz=1./size1,1./size2,1./size3
+  r=np.mgrid[ (size1-1)*dx:-dx:-dx, 0:size2*dy:dy, 0:size3*dz:dz]
+  s1,s2,s3=r.shape[1],r.shape[2],r.shape[3] #The 1st coordinate sometimes gets an extra bin
+  r=r.transpose()
+  coords = np.dot(r, T)
+  coords=np.reshape(coords,(s1,s2,s3,3))
+  print coords.shape
+
+  return coords
+
+
+#Method to write array to XYZ for Ovito, don't bother with transform
+def xyz_save(oguess,name):
+    a=time.clock()
+    nx,ny,nz=oguess.shape[0],oguess.shape[1],oguess.shape[2]
+    nd=2
+    nats=(nx//nd)*(ny//nd)*(nz//nd)
+    ofile=open(name,'w')
+    ofile.write("%d\n" %nats)
+    ofile.write("X Y Z Intensity Phase\n")
+    for i in range(0,nx,nd):
+        for j in range(0,ny,nd):
+            for k in range(0,nz,nd):
+                tmp=cmath.polar(oguess[i,j,k])
+                ofile.write("%.2f %.2f %.2f %.4f %.4f\n" %(i,j,k,tmp[0],tmp[1]))
+    ofile.close()
+    b=time.clock()
+    print "File write time", b-a
+    return
 

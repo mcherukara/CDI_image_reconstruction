@@ -1,6 +1,7 @@
 import numpy as n
 import math as m
-import scipy.fftpack as sf
+#import scipy.fftpack as sf
+import pyfftw.interfaces.scipy_fftpack as sf
 import scipy.signal as ss
 
 #from PythonPhasing import tifffile as tiff
